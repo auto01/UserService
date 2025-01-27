@@ -1,18 +1,17 @@
 package com.example.userservice.services;
 
 import com.example.userservice.config.BcryptPasswordEncoderConfig;
-import com.example.userservice.dto.UserSigninRequestDto;
-import com.example.userservice.dto.UserSigninResponseDto;
-import com.example.userservice.dto.UserSignupRequestDto;
-import com.example.userservice.dto.UserSingupResponseDto;
+import com.example.userservice.dto.*;
 import com.example.userservice.models.ResponseStatus;
 import com.example.userservice.models.Token;
 import com.example.userservice.models.User;
 import com.example.userservice.repositories.TokenRepo;
 import com.example.userservice.repositories.UserRepo;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.kafka.core.KafkaTemplate;
 import org.springframework.stereotype.Service;
 import org.springframework.web.client.HttpClientErrorException;
 
@@ -32,6 +31,12 @@ public class UserServiceImpl implements UserService {
     private UserRepo userRepo;
     @Autowired
     private TokenRepo tokenRepo;
+
+    @Autowired
+    KafkaTemplate<String,String> kafkaTemplate;
+
+    @Autowired
+    ObjectMapper objectMapper;
 
     @Override
     public UserSigninResponseDto login(UserSigninRequestDto userSigninRequestDto) {
@@ -61,7 +66,22 @@ public class UserServiceImpl implements UserService {
             user.setDeleted(false);
             user.setEncodedPassword(passwordEncoderConfig.getBCryptPasswordEncoder().encode(userSignupRequestDto.getPassword()));
             userRepo.save(user);
+
+            // call Email Service to notify user
+
+            SendEmailEventDto sendEmailEventDto=new SendEmailEventDto();
+            sendEmailEventDto.setTo(user.getEmail());
+            sendEmailEventDto.setSubject("Welcome to ABC company");
+            sendEmailEventDto.setBody("hey "+user.getName()+",welcome to to ABC company..!!!");
+            try {
+                String message = objectMapper.writeValueAsString(sendEmailEventDto);
+                kafkaTemplate.send("pk-test-topic",message);
+            }catch (Exception e){
+                throw new RuntimeException("KAFKA ERROR..!!!");
+            }
+
             return from(user);
+
         }
         return null;
     }
